@@ -1,0 +1,113 @@
+---
+title: "Data Exploration"
+author: "Joshua Jayandran"
+date: "2/20/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tibble)
+library(tidyverse)
+library(vtable)
+library(jtools)
+library(car)
+library(NHANES)
+library(ggforce)
+library(ggplot2)
+library(ggpubr)
+library(fs)
+library(lubridate)
+```
+
+## Data Exploration Project
+
+Loading the data into R. I started by reading in the csv files and creating a path for the trends csv.
+
+```{r, echo=FALSE}
+scorecard_elements <- read_csv("CollegeScorecardDataDictionary-09-08-2015.csv")
+id_name_link <- read_csv("id_name_link.csv")
+scorecards <- read_csv("Most+Recent+Cohorts+(Scorecard+Elements).csv")
+
+file_paths <- fs::dir_ls("Lab3_Rawdata")
+file_paths
+```
+
+## Making the data into a single data frame.
+
+
+```{r pressure, echo=FALSE}
+trends <- file_paths %>%
+  map(read_csv)%>%
+  bind_rows()
+trends
+id_name_link <- id_name_link %>%
+  group_by(schname) %>%
+  mutate(n = n()) %>%
+  filter(n == 1)
+data <- trends%>%
+  left_join(id_name_link, by ='schname')
+data1<- merge(x=data,y=scorecards, by = 'OPEID')
+```
+```{r}
+data2 <- data1 %>%
+  mutate(date = str_sub(monthorweek, 1, 10)) %>%
+  mutate(date = ymd(date)) %>%
+  mutate(after_2015 = date > ymd('2015-12-31'))
+```
+## Data Cleaning
+```{r}
+data3 <- data2[!data2$md_earn_wne_p10_REPORTED_EARNINGS == 'NULL',]
+data3<- data3%>%
+  filter(md_earn_wne_p10_REPORTED_EARNINGS != 'PrivacySuppressed')
+
+data3<- filter(data3, PREDDEG == 3)
+data3<- data3%>%
+  mutate(Earnings = md_earn_wne_p10_REPORTED_EARNINGS)%>%
+  mutate(State = STABBR)
+```
+## Only taking the variables that made sense to me before the analysis.
+
+I decided to only take variables that I thought made sense at that one. I wanted to do something different. However, after looking through the data and seeing what could, I realized that it was going to be too complex to do so. One control I wanted to have was family income. But it turned out that there were too many different factors which would have been hard to understand. Therefore, I decided to go along and only take 7 variables as it is easier for me to read and understand what to do. I wanted to make sure I had a clean data before doing anything else so I dropped all the empty cells and then start. 
+
+## Analysis
+
+Once I knew I had a clean data set, I standardized my data so that index would mean the same thing across the entire data as in the assignment details, that an increase in 1 does not mean the same as an increase in 1 for another institution. After, I wanted to separate my high earnings which was for institutions that give more than 60000 into a new data set. And respectively the lower earnings institutions that less than 60000 into a different data set. The reason I used 60000 instead of any other number was because the average mean income of fresh graduates was around 55000, according to Google, and added 5000 to that number so I would know that everyone would earn more than the average and therefore is higher earnings.
+
+Thereafter, I made two regressions. One for the high earnings and one for the low earnings. From the results of my regression. It shows me that as time goes by, from 2013, the index and the searches on Google are going down. This means it has a negative relationship. However, high earnings institution has a -0.000366 change with every 1 unit change while low earnings institutions has an -0.000429 change with every 1 unit change. This means that both searches for colleges have dropped over the years but, low earnings institutions has been dropping more than the higher earnings institution. I believe this answers the research question as it shows that there are more interest in higher earnings colleges than lower earnings ones but the changes are not significant.
+```{r}
+df <- data3%>% 
+  select(INSTNM, CITY, State,index, date, after_2015,Earnings)%>%
+  drop_na
+df<- df%>%
+  mutate(stand = scale(df$index))
+sumtable(df)
+
+highdf<- df%>%
+  filter(Earnings>60000)
+lowdf<- df%>%
+  filter(Earnings<60000)
+  
+regresshighdf <- lm(stand ~ date, data = highdf )
+regresslowdf<- lm(stand~date, data = lowdf)
+export_summs(regresshighdf, regresslowdf, digits= 6)
+```
+## Changing the dates so they only show the year
+```{r pressure, echo=FALSE}
+highdf$year <- as.numeric(format(highdf$date, "%Y"))
+lowdf$year <- as.numeric(format(lowdf$date, "%Y"))
+```
+## Plotting my graph
+
+Before I could plot my graph, I decided to make a extract the variables I only needed. This meant taking only the years and the average of the standardized index. This meant I had to make a graph with two data sets which was not as difficult as I imagined. As you can see from the graph below, after the scorecards were released interest from students did not go down that much but it went down more for the lower earning colleges(red) as compared to higher earning colleges(blue). I think the release of the scorecards did not really play a big part in shifting the interest of students going to higher earning colleges.
+```{r pressure, echo=FALSE}
+test1 <- highdf%>%
+  group_by(year)%>%
+  summarise(stand = mean(stand))
+test2 <- lowdf%>%
+  group_by(year)%>%
+  summarise(stand = mean(stand))
+ggplot()+ theme_minimal()+ 
+  geom_line(data= test1, aes(x = year, y= stand, color = 'red'))+geom_line(data= test2, aes(x = year, y= stand,color= 'blue'))+
+  geom_vline(xintercept =2015.75)
+```
